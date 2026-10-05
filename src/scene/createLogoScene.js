@@ -6,8 +6,10 @@ export const settings = {
   width: 18,
   depth: 0.48,
   revolutionSeconds: 30,
-  screenFill: 0.92,
-  frontLightIntensity: 2.5,
+  screenFill: 0.85,
+  frontLightIntensity: 2.9,
+  floorGap: 0.4,
+  reflectionOpacity: 0.24,
 }
 
 export function createLogoScene(canvas) {
@@ -65,6 +67,52 @@ export function createLogoScene(canvas) {
     group.add(new THREE.Mesh(geometry, [face, edge]))
   }
 
+  // Mirror the actual solids across an invisible black floor. The reflection
+  // follows every rotation and fades with distance below the floor plane.
+  const floorY = -logo.height * scale / 2 - settings.floorGap
+  const reflection = group.clone()
+  const mirror = new THREE.Group()
+  mirror.position.y = floorY * 2
+  mirror.scale.y = -1
+  mirror.add(reflection)
+  scene.add(mirror)
+
+  const reflectedMaterials = new Map()
+  reflection.traverse((object) => {
+    if (!object.isMesh) return
+    object.material = object.material.map((source) => {
+      if (reflectedMaterials.has(source)) return reflectedMaterials.get(source)
+      const material = source.clone()
+      material.transparent = true
+      material.opacity = settings.reflectionOpacity
+      material.depthWrite = false
+      material.roughness = 0.85
+      if (material.isMeshPhysicalMaterial) {
+        material.clearcoat = 0
+        material.specularIntensity = 0.05
+      }
+      material.onBeforeCompile = (shader) => {
+        shader.uniforms.floorY = { value: floorY }
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nvarying float reflectionWorldY;')
+          .replace('#include <project_vertex>', `#include <project_vertex>
+            reflectionWorldY = (modelMatrix * vec4(transformed, 1.0)).y;`)
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', `#include <common>
+            varying float reflectionWorldY;
+            uniform float floorY;`)
+          .replace('#include <alphamap_fragment>', `#include <alphamap_fragment>
+            float distanceToFloor = floorY - reflectionWorldY;
+            float fade = 1.0 - smoothstep(0.0, 3.6, distanceToFloor);
+            diffuseColor.a *= fade * fade;`)
+      }
+      material.customProgramCacheKey = () => 'floor-reflection-v1'
+      reflectedMaterials.set(source, material)
+      materials.push(material)
+      return material
+    })
+  })
+
   // Fixed studio lights let the rotating faces and edges catch the light.
   const frontLight = new THREE.DirectionalLight(0xffffff, settings.frontLightIntensity)
   frontLight.position.set(-2, 3, 14)
@@ -100,7 +148,9 @@ export function createLogoScene(canvas) {
     const phase = elapsed * Math.PI * 2 / settings.revolutionSeconds
     // Linger near readable positions, glide faster through the profile.
     group.rotation.y = phase - 0.32 * Math.sin(2 * phase) - 0.1
-    group.rotation.x = -0.045 + Math.sin(phase) * 0.075
+    // A restrained tilt keeps the long logo floating above the floor all turn.
+    group.rotation.x = -0.025
+    reflection.rotation.copy(group.rotation)
     renderer.render(scene, camera)
   }
 

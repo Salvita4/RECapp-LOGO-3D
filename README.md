@@ -2,7 +2,9 @@
 
 Vue 3 + Three.js + Vite. Una escena negra a pantalla completa con el logo
 original extruido, rojo `#D50006` y blanco, iluminación frontal y giro de 360°
-cada 30 segundos. Pensada para monitores de escritorio, sin interfaz adicional.
+cada 30 segundos. Un reflejo tenue que se desvanece debajo del logo simula un
+piso negro, con separación para dar la sensación de que el logo flota.
+Pensada para monitores de escritorio, sin interfaz adicional.
 
 ## Ejecutar
 
@@ -30,7 +32,8 @@ bisel; los huecos están abiertos. Se conservan las letras, el punto y las cuatr
 esquinas blancas de la imagen. El PNG original no se modifica.
 
 En `src/scene/createLogoScene.js`, `settings` controla el ancho, la profundidad,
-el tiempo por vuelta, la proporción de pantalla y la intensidad de la luz frontal.
+el tiempo por vuelta, la proporción de pantalla, la intensidad de la luz frontal,
+la separación del piso y la opacidad del reflejo.
 Los colores están en el JSON de contornos. El encuadre conserva las proporciones
 del logo y se adapta al tamaño del monitor, sin layouts móviles.
 
