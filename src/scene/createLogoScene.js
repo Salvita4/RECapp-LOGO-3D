@@ -1,5 +1,8 @@
 import * as THREE from 'three'
 import logo from '../assets/logo-contours.json'
+import { MIN_ZOOM, MAX_ZOOM } from '../tracking/handZoom.js'
+import { MIN_SPEED, MAX_SPEED, MIN_LETTERS, MAX_LETTERS } from '../tracking/handControls.js'
+import { partitionLayer } from './logoParts.js'
 
 // All dimensions originate in RECAPP.png, including the transparent stripes.
 export const settings = {
@@ -44,27 +47,37 @@ export function createLogoScene(canvas) {
     })
     materials.push(face, edge)
 
-    const shapes = layer.contours.map(({ points }) => {
-      const shape = new THREE.Shape(points.map(([x, y]) => new THREE.Vector2(
-        (x - logo.width / 2) * scale,
-        (logo.height / 2 - y) * scale,
-      )))
-      shape.closePath()
-      return shape
-    })
-    // Each stripe is a separate closed solid; only two meshes are needed.
-    const geometry = new THREE.ExtrudeGeometry(shapes, {
-      depth: settings.depth,
-      steps: 1,
-      bevelEnabled: true,
-      bevelThickness: scale * 0.55,
-      bevelSize: scale * 0.55,
-      bevelSegments: 2,
-      curveSegments: 32,
-    })
-    geometry.translate(0, 0, -settings.depth / 2)
-    geometries.push(geometry)
-    group.add(new THREE.Mesh(geometry, [face, edge]))
+    for (const { letter, contours } of partitionLayer(layer)) {
+      const shapes = contours.map(({ points }) => {
+        const shape = new THREE.Shape(points.map(([x, y]) => new THREE.Vector2(
+          (x - logo.width / 2) * scale,
+          (logo.height / 2 - y) * scale,
+        )))
+        shape.closePath()
+        return shape
+      })
+      // Las franjas de cada letra forman un mesh que se escala desde su centro.
+      const geometry = new THREE.ExtrudeGeometry(shapes, {
+        depth: settings.depth,
+        steps: 1,
+        bevelEnabled: true,
+        bevelThickness: scale * 0.55,
+        bevelSize: scale * 0.55,
+        bevelSegments: 2,
+        curveSegments: 32,
+      })
+      geometry.translate(0, 0, -settings.depth / 2)
+      geometries.push(geometry)
+      const mesh = new THREE.Mesh(geometry, [face, edge])
+      if (letter) {
+        const x = (letter.x - logo.width / 2) * scale
+        const y = (logo.height / 2 - letter.y) * scale
+        geometry.translate(-x, -y, 0)
+        mesh.position.set(x, y, 0)
+        mesh.userData.letter = true
+      }
+      group.add(mesh)
+    }
   }
 
   // Mirror the actual solids across an invisible black floor. The reflection
@@ -138,11 +151,15 @@ export function createLogoScene(canvas) {
   }
 
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
+  let speed = 1
+  let direction = 1
+  let paused = false
   let elapsed = 0
   let previousTime = null
   function render(time) {
-    if (previousTime !== null && !reducedMotion.matches) {
-      elapsed += Math.min((time - previousTime) / 1000, 0.05)
+    if (previousTime !== null && !reducedMotion.matches && !paused) {
+      // Integramos la velocidad para invertir el giro sin saltar de orientación.
+      elapsed += Math.min((time - previousTime) / 1000, 0.05) * speed * direction
     }
     previousTime = time
     const phase = elapsed * Math.PI * 2 / settings.revolutionSeconds
@@ -156,7 +173,7 @@ export function createLogoScene(canvas) {
 
   function updatePlayback() {
     previousTime = null
-    renderer.setAnimationLoop(document.hidden || reducedMotion.matches ? null : render)
+    renderer.setAnimationLoop(document.hidden || reducedMotion.matches || paused ? null : render)
     if (!document.hidden) render(performance.now())
   }
 
@@ -167,7 +184,33 @@ export function createLogoScene(canvas) {
   resize()
   updatePlayback()
 
-  return () => {
+  function setZoom(value) {
+    if (!Number.isFinite(value)) return
+    camera.zoom = THREE.MathUtils.clamp(value, MIN_ZOOM, MAX_ZOOM)
+    camera.updateProjectionMatrix()
+    // También funciona cuando el giro está detenido por movimiento reducido.
+    if (!document.hidden) renderer.render(scene, camera)
+  }
+
+  function setControls(values) {
+    if (Number.isFinite(values.speed)) speed = THREE.MathUtils.clamp(values.speed, MIN_SPEED, MAX_SPEED)
+    if (values.direction === -1 || values.direction === 1) direction = values.direction
+    if (Number.isFinite(values.letters)) {
+      const size = THREE.MathUtils.clamp(values.letters, MIN_LETTERS, MAX_LETTERS)
+      for (const parent of [group, reflection]) {
+        for (const child of parent.children) {
+          if (child.userData.letter) child.scale.set(size, size, 1)
+        }
+      }
+    }
+    if (typeof values.paused === 'boolean' && values.paused !== paused) {
+      paused = values.paused
+      updatePlayback()
+    }
+    if (!document.hidden) renderer.render(scene, camera)
+  }
+
+  function dispose() {
     renderer.setAnimationLoop(null)
     observer.disconnect()
     document.removeEventListener('visibilitychange', updatePlayback)
@@ -176,4 +219,5 @@ export function createLogoScene(canvas) {
     materials.forEach((material) => material.dispose())
     renderer.dispose()
   }
+  return { setZoom, setControls, dispose }
 }

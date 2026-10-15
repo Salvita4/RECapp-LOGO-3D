@@ -1,5 +1,30 @@
+# Dependencias y compilación
 node_modules/
 dist/
+.vite/
+
+# Resultados y cachés de pruebas
 test-results/
 playwright-report/
+blob-report/
+playwright/.cache/
+coverage/
+
+# Logs y configuración local (conservar plantillas)
+*.log
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Cachés del script Python de contornos
+__pycache__/
+*.py[cod]
+.venv/
+
+# Archivos del sistema
 .DS_Store
+Thumbs.db
+
+# public/models/hand_landmarker.task se versiona: es necesario para el tracking.
+# También se conservan package-lock.json, el logo y sus contornos.
